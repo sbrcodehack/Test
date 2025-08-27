@@ -1,0 +1,21 @@
+{
+  "name": "Bouncing Ball Game",
+  "short_name": "Bouncing Ball",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#1a1a1a",
+  "theme_color": "#66b3ff",
+  "description": "A simple bouncing ball game with bricks.",
+  "icons": [
+    {
+      "src": "https://placehold.co/192x192/1a1a1a/66b3ff?text=BB",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://placehold.co/512x512/1a1a1a/66b3ff?text=BB",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
