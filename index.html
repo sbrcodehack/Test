@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bouncing Ball PWA</title>
+<link rel="manifest" href="manifest.json">
+<style>
+  body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    background-color: #1a1a1a;
+    margin: 0;
+    font-family: 'Inter', sans-serif;
+    color: white;
+    flex-direction: column;
+  }
+  canvas {
+    background: #000;
+    border: 3px solid #66b3ff;
+    border-radius: 10px;
+    box-shadow: 0 0 20px rgba(102, 179, 255, 0.5);
+  }
+  h1 {
+    font-size: 2.5rem;
+    color: #66b3ff;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+    margin-bottom: 20px;
+  }
+  .game-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .score-board {
+    font-size: 1.5rem;
+    color: #fff;
+    margin-bottom: 10px;
+  }
+</style>
+</head>
+<body>
+
+<div class="game-container">
+  <h1>Bouncing Ball</h1>
+  <div class="score-board">Score: <span id="score">0</span></div>
+  <canvas id="gameCanvas" width="480" height="320"></canvas>
+</div>
+
+<script>
+  // Register the service worker
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/service-worker.js')
+        .then(registration => {
+          console.log('Service Worker registered with scope:', registration.scope);
+        })
+        .catch(error => {
+          console.log('Service Worker registration failed:', error);
+        });
+    });
+  }
+
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+
+  let score = 0;
+  const scoreDisplay = document.getElementById('score');
+
+  // Ball properties
+  let x = canvas.width / 2;
+  let y = canvas.height - 30;
+  let dx = 2; // Delta x (speed in x direction)
+  let dy = -2; // Delta y (speed in y direction)
+  const ballRadius = 10;
+
+  // Paddle properties
+  const paddleHeight = 10;
+  const paddleWidth = 75;
+  let paddleX = (canvas.width - paddleWidth) / 2;
+
+  // Bricks properties
+  const brickRowCount = 3;
+  const brickColumnCount = 5;
+  const brickWidth = 75;
+  const brickHeight = 20;
+  const brickPadding = 10;
+  const brickOffsetTop = 30;
+  const brickOffsetLeft = 30;
+
+  const bricks = [];
+  for (let c = 0; c < brickColumnCount; c++) {
+    bricks[c] = [];
+    for (let r = 0; r < brickRowCount; r++) {
+      bricks[c][r] = { x: 0, y: 0, status: 1 };
+    }
+  }
+
+  // User input
+  let rightPressed = false;
+  let leftPressed = false;
+
+  // Event listeners for keyboard input
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Right' || e.key === 'ArrowRight') {
+      rightPressed = true;
+    } else if (e.key === 'Left' || e.key === 'ArrowLeft') {
+      leftPressed = true;
+    }
+  });
+
+  document.addEventListener('keyup', (e) => {
+    if (e.key === 'Right' || e.key === 'ArrowRight') {
+      rightPressed = false;
+    } else if (e.key === 'Left' || e.key === 'ArrowLeft') {
+      leftPressed = false;
+    }
+  });
+  
+  // Event listeners for touch input (for mobile)
+  canvas.addEventListener('touchmove', (e) => {
+    e.preventDefault(); // Prevent default scroll behavior
+    const touchX = e.touches[0].clientX - canvas.offsetLeft;
+    if (touchX > 0 && touchX < canvas.width) {
+      paddleX = touchX - paddleWidth / 2;
+    }
+  });
+
+  // Function to draw the ball on the canvas
+  function drawBall() {
+    ctx.beginPath();
+    ctx.arc(x, y, ballRadius, 0, Math.PI * 2);
+    ctx.fillStyle = '#66b3ff';
+    ctx.fill();
+    ctx.closePath();
+  }
+
+  // Function to draw the paddle on the canvas
+  function drawPaddle() {
+    ctx.beginPath();
+    ctx.rect(paddleX, canvas.height - paddleHeight, paddleWidth, paddleHeight);
+    ctx.fillStyle = '#66b3ff';
+    ctx.fill();
+    ctx.closePath();
+  }
+
+  // Function to draw the bricks on the canvas
+  function drawBricks() {
+    for (let c = 0; c < brickColumnCount; c++) {
+      for (let r = 0; r < brickRowCount; r++) {
+        if (bricks[c][r].status === 1) {
+          const brickX = (c * (brickWidth + brickPadding)) + brickOffsetLeft;
+          const brickY = (r * (brickHeight + brickPadding)) + brickOffsetTop;
+          bricks[c][r].x = brickX;
+          bricks[c][r].y = brickY;
+          ctx.beginPath();
+          ctx.rect(brickX, brickY, brickWidth, brickHeight);
+          ctx.fillStyle = '#b366ff'; // Different color for bricks
+          ctx.fill();
+          ctx.closePath();
+        }
+      }
+    }
+  }
+
+  // Function to detect collision between the ball and bricks
+  function collisionDetection() {
+    for (let c = 0; c < brickColumnCount; c++) {
+      for (let r = 0; r < brickRowCount; r++) {
+        const b = bricks[c][r];
+        if (b.status === 1) {
+          if (x > b.x && x < b.x + brickWidth && y > b.y && y < b.y + brickHeight) {
+            dy = -dy;
+            b.status = 0;
+            score++;
+            scoreDisplay.textContent = score;
+            // Check for win condition
+            if (score === brickRowCount * brickColumnCount) {
+              showMessage('YOU WIN, CONGRATULATIONS!');
+              // Wait for a second before reloading
+              setTimeout(() => document.location.reload(), 1000);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Function to show a message box (instead of using alert)
+  function showMessage(message) {
+    const messageBox = document.createElement('div');
+    messageBox.style.cssText = `
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background-color: #333;
+      color: white;
+      padding: 20px;
+      border-radius: 10px;
+      border: 2px solid #66b3ff;
+      text-align: center;
+      font-size: 24px;
+      z-index: 10;
+      opacity: 0;
+      animation: fadeIn 0.5s forwards;
+    `;
+    messageBox.textContent = message;
+    document.body.appendChild(messageBox);
+  }
+
+  // Main game loop
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear the canvas for the next frame
+    drawBricks();
+    drawBall();
+    drawPaddle();
+    collisionDetection();
+
+    // Ball movement and wall collision detection
+    if (x + dx > canvas.width - ballRadius || x + dx < ballRadius) {
+      dx = -dx;
+    }
+    if (y + dy < ballRadius) {
+      dy = -dy;
+    } else if (y + dy > canvas.height - ballRadius) {
+      // Check for ball hitting the paddle
+      if (x > paddleX && x < paddleX + paddleWidth) {
+        dy = -dy;
+      } else {
+        showMessage('GAME OVER');
+        // Wait for a second before reloading
+        setTimeout(() => document.location.reload(), 1000);
+      }
+    }
+
+    // Paddle movement
+    if (rightPressed) {
+      paddleX += 7;
+      if (paddleX + paddleWidth > canvas.width) {
+        paddleX = canvas.width - paddleWidth;
+      }
+    } else if (leftPressed) {
+      paddleX -= 7;
+      if (paddleX < 0) {
+        paddleX = 0;
+      }
+    }
+
+    x += dx;
+    y += dy;
+
+    // Call the draw function again for the next frame
+    requestAnimationFrame(draw);
+  }
+
+  draw();
+</script>
+
+</body>
+</html>
