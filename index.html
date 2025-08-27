@@ -38,6 +38,40 @@
     color: #fff;
     margin-bottom: 10px;
   }
+  .button-container {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+  }
+  .game-button {
+    background-color: #4CAF50; /* Green */
+    border: none;
+    color: white;
+    padding: 15px 32px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 16px;
+    cursor: pointer;
+    border-radius: 8px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+  }
+  .game-button.install {
+    background-color: #008CBA; /* Blue */
+  }
+  .loader {
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #66b3ff;
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    animation: spin 1s linear infinite;
+    display: none;
+  }
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
 </style>
 </head>
 <body>
@@ -46,9 +80,44 @@
   <h1>Bouncing Ball</h1>
   <div class="score-board">Score: <span id="score">0</span></div>
   <canvas id="gameCanvas" width="480" height="320"></canvas>
+  <div class="button-container">
+    <button id="installButton" class="game-button install" style="display: none;">Install App</button>
+    <button id="generateLevelButton" class="game-button">✨ Generate New Level ✨</button>
+  </div>
+  <div class="loader" id="loader"></div>
 </div>
 
 <script>
+  let deferredPrompt; // Variable to hold the event object
+  const installButton = document.getElementById('installButton');
+  const generateLevelButton = document.getElementById('generateLevelButton');
+  const loader = document.getElementById('loader');
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    // Prevent the mini-infobar from appearing on mobile
+    e.preventDefault();
+    // Stash the event so it can be triggered later.
+    deferredPrompt = e;
+    // Show the install button
+    installButton.style.display = 'block';
+  });
+
+  installButton.addEventListener('click', () => {
+    // Hide the button
+    installButton.style.display = 'none';
+    // Show the install prompt
+    deferredPrompt.prompt();
+    // Wait for the user to respond to the prompt
+    deferredPrompt.userChoice.then((choiceResult) => {
+      if (choiceResult.outcome === 'accepted') {
+        console.log('User accepted the install prompt');
+      } else {
+        console.log('User dismissed the install prompt');
+      }
+      deferredPrompt = null;
+    });
+  });
+
   // Register the service worker
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
@@ -81,21 +150,112 @@
   let paddleX = (canvas.width - paddleWidth) / 2;
 
   // Bricks properties
-  const brickRowCount = 3;
-  const brickColumnCount = 5;
+  let brickRowCount = 3;
+  let brickColumnCount = 5;
   const brickWidth = 75;
   const brickHeight = 20;
   const brickPadding = 10;
   const brickOffsetTop = 30;
   const brickOffsetLeft = 30;
 
-  const bricks = [];
-  for (let c = 0; c < brickColumnCount; c++) {
-    bricks[c] = [];
-    for (let r = 0; r < brickRowCount; r++) {
-      bricks[c][r] = { x: 0, y: 0, status: 1 };
+  let bricks = [];
+
+  // Function to create the initial brick layout
+  function createBricks() {
+    bricks = [];
+    for (let c = 0; c < brickColumnCount; c++) {
+      bricks[c] = [];
+      for (let r = 0; r < brickRowCount; r++) {
+        bricks[c][r] = { x: 0, y: 0, status: 1 };
+      }
     }
   }
+
+  createBricks();
+
+  // Gemini API Integration for level generation
+  async function generateNewLevel() {
+    loader.style.display = 'block';
+    generateLevelButton.disabled = true;
+
+    const apiKey = ""; 
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+
+    const prompt = `Create a new brick layout for a breakout game. The layout must be a 2D array of 0s and 1s, where 1 means a brick is present and 0 means it's not. The layout should have ${brickRowCount} rows and ${brickColumnCount} columns. The pattern should be creative and not just a solid block.`;
+
+    const payload = {
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: "OBJECT",
+                properties: {
+                    "layout": {
+                        "type": "ARRAY",
+                        "items": {
+                            "type": "ARRAY",
+                            "items": { "type": "NUMBER" }
+                        }
+                    }
+                }
+            }
+        },
+    };
+
+    try {
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+            throw new Error(`API call failed with status: ${response.status}`);
+        }
+
+        const result = await response.json();
+        const jsonText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (jsonText) {
+            const parsedData = JSON.parse(jsonText);
+            const newLayout = parsedData.layout;
+            
+            // Validate the received layout dimensions
+            if (newLayout && newLayout.length === brickRowCount && newLayout.every(row => row.length === brickColumnCount)) {
+                // Update the game state with the new layout
+                bricks = [];
+                for (let c = 0; c < brickColumnCount; c++) {
+                    bricks[c] = [];
+                    for (let r = 0; r < brickRowCount; r++) {
+                        bricks[c][r] = { x: 0, y: 0, status: newLayout[r][c] };
+                    }
+                }
+                
+                // Reset game variables to start fresh level
+                score = 0;
+                scoreDisplay.textContent = score;
+                x = canvas.width / 2;
+                y = canvas.height - 30;
+                dx = 2;
+                dy = -2;
+            } else {
+                console.error("Invalid layout received from API.");
+                // Fallback to original layout
+                createBricks();
+            }
+        }
+    } catch (error) {
+        console.error("Error generating new level:", error);
+        // On error, show a message and fall back to the original layout
+        showMessage('Error generating level. Please try again.');
+        createBricks();
+    } finally {
+        loader.style.display = 'none';
+        generateLevelButton.disabled = false;
+    }
+  }
+
+  generateLevelButton.addEventListener('click', generateNewLevel);
+
 
   // User input
   let rightPressed = false;
